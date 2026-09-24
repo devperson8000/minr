@@ -6,14 +6,26 @@ on:
   pull_request:
 
 jobs:
-  miner:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Compile miner
         run: python -m py_compile miner.py
+
       - name: Run protocol tests
         run: python -m unittest discover -s tests -v
+
+      - name: Check frontend JavaScript
+        run: node --check web/app.js
+
+      - name: Check Vercel function JavaScript
+        run: node --check api/miner.js
+
+      - name: Validate Vercel config
+        run: python -m json.tool vercel.json >/dev/null
