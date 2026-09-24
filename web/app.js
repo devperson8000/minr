@@ -4,12 +4,9 @@ const ui = {
   hashRate: document.getElementById("hash-rate"),
   height: document.getElementById("height"),
   accepted: document.getElementById("accepted"),
-  uptime: document.getElementById("uptime"),
+  activeMiners: document.getElementById("active-miners"),
   workers: document.getElementById("workers"),
   phase: document.getElementById("phase"),
-  toggle: document.getElementById("toggle"),
-  buttonIcon: document.getElementById("button-icon"),
-  buttonLabel: document.getElementById("button-label"),
   error: document.getElementById("error"),
   acceptedBanner: document.getElementById("accepted-banner"),
   acceptedCopy: document.getElementById("accepted-copy"),
@@ -41,11 +38,28 @@ const ui = {
   workChart: document.getElementById("work-chart"),
   hashChartEmpty: document.getElementById("hash-chart-empty"),
   workChartEmpty: document.getElementById("work-chart-empty"),
+
+  slots: [1, 2].map((slot) => ({
+    card: document.getElementById(`miner-${slot}-card`),
+    pill: document.getElementById(`miner-${slot}-status-pill`),
+    status: document.getElementById(`miner-${slot}-status`),
+    rate: document.getElementById(`miner-${slot}-rate`),
+    height: document.getElementById(`miner-${slot}-height`),
+    phase: document.getElementById(`miner-${slot}-phase`),
+    toggle: document.getElementById(`miner-${slot}-toggle`),
+    buttonIcon: document.getElementById(`miner-${slot}-button-icon`),
+    buttonLabel: document.getElementById(`miner-${slot}-button-label`),
+    error: document.getElementById(`miner-${slot}-error`),
+  })),
 };
 
-let stats = null;
-let busy = false;
-let lastAcceptedHeight = null;
+const minerStats = [null, null];
+const minerErrors = ["", ""];
+const busy = [false, false];
+const lastVisibleRate = [0, 0];
+const lastVisibleRateAt = [0, 0];
+const lastAcceptedMarker = [null, null];
+let initializedAcceptedMarkers = false;
 let lastHistory = [];
 
 function formatRate(value) {
@@ -54,15 +68,6 @@ function formatRate(value) {
   if (rate >= 1e6) return (rate / 1e6).toFixed(2) + " MH/s";
   if (rate >= 1e3) return (rate / 1e3).toFixed(1) + " kH/s";
   return Math.round(rate).toLocaleString() + " H/s";
-}
-
-function formatUptime(value) {
-  const seconds = Math.max(0, Math.floor(Number(value || 0)));
-  if (seconds < 60) return seconds + "s";
-  if (seconds < 3600) return Math.floor(seconds / 60) + "m";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return hours + "h " + minutes + "m";
 }
 
 function formatCompact(value) {
@@ -75,13 +80,26 @@ function formatCompact(value) {
   return Math.round(number).toLocaleString();
 }
 
-function formatKnx(shards) {
-  let value;
+function asBigInt(value) {
   try {
-    value = BigInt(String(shards ?? "0"));
+    return BigInt(String(value ?? "0"));
   } catch {
-    value = 0n;
+    return 0n;
   }
+}
+
+function maxBigIntString(values) {
+  let maximum = 0n;
+  for (const value of values) maximum = maximum > asBigInt(value) ? maximum : asBigInt(value);
+  return maximum.toString();
+}
+
+function sumBigIntString(values) {
+  return values.reduce((total, value) => total + asBigInt(value), 0n).toString();
+}
+
+function formatKnx(shards) {
+  const value = asBigInt(shards);
   const base = 100000000n;
   const whole = value / base;
   const fraction = (value % base).toString().padStart(8, "0");
@@ -91,12 +109,7 @@ function formatKnx(shards) {
 }
 
 function formatAudCents(cents) {
-  let value;
-  try {
-    value = BigInt(String(cents ?? "0"));
-  } catch {
-    value = 0n;
-  }
+  const value = asBigInt(cents);
   const negative = value < 0n;
   const abs = negative ? -value : value;
   const whole = abs / 100n;
@@ -132,15 +145,122 @@ function formatWindow(seconds) {
   return Math.max(1, Math.round(value / 60)) + "m window";
 }
 
+function publicPhase(next) {
+  if (!next) return "Offline";
+  if (!next.mining_requested) return "Paused";
+  const phase = String(next.phase || "");
+  if (phase === "configuration_error") return "Needs setup";
+  if (phase === "backoff") return "Retrying";
+  if (phase === "stopped" || phase === "paused") return "Paused";
+  // Template fetch/refresh/submit are normal parts of continuous mining.
+  return "Mining";
+}
+
+function effectiveRate(next, slotIndex) {
+  if (!next) return 0;
+  const raw = Number(next.hash_rate_hs || 0);
+  const phase = String(next.phase || "");
+  const requested = Boolean(next.mining_requested);
+
+  if (raw > 0) {
+    lastVisibleRate[slotIndex] = raw;
+    lastVisibleRateAt[slotIndex] = Date.now();
+    return raw;
+  }
+
+  const handoff =
+    requested &&
+    ["fetching_template", "refreshing", "submitting", "accepted", "mining"].includes(phase);
+
+  if (
+    handoff &&
+    lastVisibleRate[slotIndex] > 0 &&
+    Date.now() - lastVisibleRateAt[slotIndex] < 15000
+  ) {
+    return lastVisibleRate[slotIndex];
+  }
+
+  return 0;
+}
+
 function totalHashes(next) {
+  if (!next) return 0;
   return Number(next.total_attempts || 0) + Number(next.current_job_attempts || 0);
+}
+
+function latestAccepted(miners) {
+  const candidates = miners
+    .filter(Boolean)
+    .map((miner, slot) => ({
+      slot,
+      height: miner.last_accepted_height,
+      at: miner.last_accepted_at,
+    }))
+    .filter((entry) => entry.height != null && entry.at);
+  candidates.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return candidates[0] || null;
+}
+
+function mergeHistories(miners) {
+  const buckets = new Map();
+
+  miners.forEach((miner, slot) => {
+    const history = Array.isArray(miner?.hash_history) ? miner.hash_history : [];
+    for (const point of history) {
+      const rawTime = Number(point.time || 0);
+      if (!Number.isFinite(rawTime) || rawTime <= 0) continue;
+      const time = Math.round(rawTime / 2) * 2;
+      if (!buckets.has(time)) {
+        buckets.set(time, {
+          time,
+          rates: [null, null],
+          hashes: [null, null],
+          heights: [null, null],
+        });
+      }
+      const bucket = buckets.get(time);
+      bucket.rates[slot] = Number(point.hash_rate_hs || 0);
+      bucket.hashes[slot] = Number(point.total_hashes || 0);
+      bucket.heights[slot] = point.height == null ? null : Number(point.height);
+    }
+  });
+
+  const rows = [...buckets.values()].sort((a, b) => a.time - b.time);
+  const lastRate = [0, 0];
+  const lastRateTime = [0, 0];
+  const lastHashes = [0, 0];
+  const lastHeights = [null, null];
+
+  return rows.map((row) => {
+    for (let slot = 0; slot < 2; slot += 1) {
+      if (row.rates[slot] != null) {
+        lastRate[slot] = row.rates[slot];
+        lastRateTime[slot] = row.time;
+      }
+      if (row.hashes[slot] != null) lastHashes[slot] = row.hashes[slot];
+      if (row.heights[slot] != null) lastHeights[slot] = row.heights[slot];
+    }
+
+    const rate = lastRate.reduce(
+      (sum, value, slot) =>
+        sum + (row.time - lastRateTime[slot] <= 8 ? Number(value || 0) : 0),
+      0,
+    );
+    const heights = lastHeights.filter((value) => Number.isFinite(value));
+
+    return {
+      time: row.time,
+      hash_rate_hs: rate,
+      total_hashes: lastHashes[0] + lastHashes[1],
+      height: heights.length ? Math.max(...heights) : null,
+    };
+  }).slice(-240);
 }
 
 function chartPalette() {
   const style = getComputedStyle(document.documentElement);
   return {
     accent: style.getPropertyValue("--accent").trim() || "#89ffba",
-    muted: style.getPropertyValue("--muted").trim() || "#7e8a83",
     line: "rgba(255,255,255,.075)",
     text: "#657069",
   };
@@ -290,115 +410,211 @@ function renderCharts(history) {
   }
 }
 
-function render(next) {
-  stats = next;
+function renderSlot(slotIndex) {
+  const next = minerStats[slotIndex];
+  const slot = slotIndex + 1;
+  const elements = ui.slots[slotIndex];
+
+  if (!next) {
+    elements.card.classList.remove("running");
+    elements.pill.classList.remove("online");
+    elements.status.textContent = minerErrors[slotIndex] ? "Unavailable" : "Connecting";
+    elements.rate.textContent = "—";
+    elements.height.textContent = "—";
+    elements.phase.textContent = "Offline";
+    elements.toggle.disabled = true;
+    elements.error.textContent = minerErrors[slotIndex];
+    return;
+  }
+
   const requested = Boolean(next.mining_requested);
   const online = next.status === "ok";
-  const phase = String(next.phase || "unknown");
-  const hashes = totalHashes(next);
+  const rate = effectiveRate(next, slotIndex);
 
-  ui.pill.classList.toggle("online", online);
-  ui.status.textContent = online ? (requested ? "Mining" : "Online") : "Offline";
-  ui.hashRate.textContent = formatRate(next.hash_rate_hs);
-  ui.height.textContent = next.height == null ? "—" : Number(next.height).toLocaleString();
-  ui.accepted.textContent = Number(next.accepted_blocks || 0).toLocaleString();
-  ui.uptime.textContent = formatUptime(next.uptime_seconds);
-  ui.workers.textContent = String(next.workers || "—");
-  ui.phase.textContent = phase.replaceAll("_", " ");
+  elements.card.classList.toggle("running", online && requested);
+  elements.pill.classList.toggle("online", online);
+  elements.status.textContent = online ? (requested ? "Mining" : "Paused") : "Offline";
+  elements.rate.textContent = formatRate(rate);
+  elements.height.textContent =
+    next.height == null ? "—" : Number(next.height).toLocaleString();
+  elements.phase.textContent = publicPhase(next);
+  elements.toggle.disabled = busy[slotIndex] || !online;
+  elements.toggle.classList.toggle("stop", requested);
+  elements.buttonIcon.textContent = requested ? "Ⅱ" : "▶";
+  elements.buttonLabel.textContent = requested ? `Stop Miner ${slot}` : `Start Miner ${slot}`;
 
-  ui.walletEarnedKnx.textContent = formatKnx(next.wallet_earned_shards);
-  ui.walletValueAud.textContent = formatAudCents(next.wallet_value_cents);
-  ui.sessionEarnedKnx.textContent = formatKnx(next.session_earned_shards);
-  ui.sessionValueAud.textContent = formatAudCents(next.session_value_cents);
-  ui.walletBlocks.textContent = Number(next.wallet_blocks_mined || 0).toLocaleString();
-  ui.currentReward.textContent = formatKnx(next.current_reward_shards);
-  ui.marketPrice.textContent = formatMarketPrice(next.market_price_cents);
+  const phase = String(next.phase || "");
+  elements.error.textContent =
+    next.last_error && ["backoff", "configuration_error"].includes(phase)
+      ? next.last_error
+      : minerErrors[slotIndex];
+}
 
-  ui.lastWin.textContent =
-    next.last_accepted_height == null
-      ? "—"
-      : "Height " + Number(next.last_accepted_height).toLocaleString();
-  ui.lastWinDetail.textContent = next.last_accepted_at
-    ? relativeTime(next.last_accepted_at)
-    : "No accepted block this session";
+function renderAggregate() {
+  const miners = minerStats.filter(Boolean);
+  const active = miners.filter((miner) => miner.mining_requested).length;
+  const reachable = miners.length;
+  const rates = minerStats.map((miner, index) => effectiveRate(miner, index));
+  const combinedRate = rates[0] + rates[1];
+  const heights = miners
+    .map((miner) => Number(miner.height))
+    .filter((value) => Number.isFinite(value));
 
-  ui.averageRate.textContent = formatRate(next.average_hash_rate_hs);
-  ui.peakRate.textContent = formatRate(next.peak_hash_rate_hs);
-  ui.totalHashes.textContent = formatCompact(hashes);
-  ui.jobsStarted.textContent = Number(next.jobs_started || 0).toLocaleString();
-  ui.staleJobs.textContent = Number(next.stale_jobs || 0).toLocaleString();
-  ui.staleRate.textContent = Number(next.stale_rate_percent || 0).toFixed(1) + "%";
+  ui.pill.classList.toggle("online", reachable > 0);
+  ui.status.textContent =
+    reachable === 2
+      ? active === 2
+        ? "2 miners live"
+        : active === 1
+          ? "1 miner live"
+          : "Miners paused"
+      : reachable === 1
+        ? "1 miner connected"
+        : "Disconnected";
 
-  ui.chartPeak.textContent = formatRate(next.peak_hash_rate_hs);
-  ui.chartTotalHashes.textContent = formatCompact(hashes);
+  ui.hashRate.textContent = formatRate(combinedRate);
+  ui.height.textContent = heights.length ? Math.max(...heights).toLocaleString() : "—";
+  ui.accepted.textContent = miners
+    .reduce((sum, miner) => sum + Number(miner.accepted_blocks || 0), 0)
+    .toLocaleString();
+  ui.activeMiners.textContent = active + " / 2";
+  ui.workers.textContent = miners
+    .reduce((sum, miner) => sum + Number(miner.workers || 0), 0)
+    .toLocaleString();
+  ui.phase.textContent =
+    active === 2 ? "Both mining" : active === 1 ? "1 miner active" : reachable ? "Paused" : "Offline";
 
-  ui.toggle.disabled = busy || !online;
-  ui.toggle.classList.toggle("stop", requested);
-  ui.buttonIcon.textContent = requested ? "Ⅱ" : "▶";
-  ui.buttonLabel.textContent = requested ? "Pause mining" : "Start mining";
+  const walletShards = maxBigIntString(miners.map((miner) => miner.wallet_earned_shards));
+  const walletValue = maxBigIntString(miners.map((miner) => miner.wallet_value_cents));
+  const sessionShards = sumBigIntString(miners.map((miner) => miner.session_earned_shards));
+  const sessionValue = sumBigIntString(miners.map((miner) => miner.session_value_cents));
+  const currentReward = maxBigIntString(miners.map((miner) => miner.current_reward_shards));
+  const walletBlocks = Math.max(0, ...miners.map((miner) => Number(miner.wallet_blocks_mined || 0)));
+  const marketPrice = Math.max(0, ...miners.map((miner) => Number(miner.market_price_cents || 0)));
 
-  if (next.last_error && phase !== "mining") {
-    ui.error.textContent = next.last_error;
-  } else {
-    ui.error.textContent = "";
-  }
+  ui.walletEarnedKnx.textContent = formatKnx(walletShards);
+  ui.walletValueAud.textContent = formatAudCents(walletValue);
+  ui.sessionEarnedKnx.textContent = formatKnx(sessionShards);
+  ui.sessionValueAud.textContent = formatAudCents(sessionValue);
+  ui.walletBlocks.textContent = walletBlocks.toLocaleString();
+  ui.currentReward.textContent = formatKnx(currentReward);
+  ui.marketPrice.textContent = formatMarketPrice(marketPrice);
 
-  renderCharts(next.hash_history);
+  const latest = latestAccepted(miners);
+  ui.lastWin.textContent = latest ? "Height " + Number(latest.height).toLocaleString() : "—";
+  ui.lastWinDetail.textContent = latest ? relativeTime(latest.at) : "No accepted block this session";
 
-  const acceptedHeight = next.last_accepted_height;
-  if (acceptedHeight != null && acceptedHeight !== lastAcceptedHeight) {
-    if (lastAcceptedHeight !== null) {
+  const totalHashCount = miners.reduce((sum, miner) => sum + totalHashes(miner), 0);
+  const jobs = miners.reduce((sum, miner) => sum + Number(miner.jobs_started || 0), 0);
+  const stale = miners.reduce((sum, miner) => sum + Number(miner.stale_jobs || 0), 0);
+  const combinedHistory = mergeHistories(minerStats);
+  const historyRates = combinedHistory.map((point) => Number(point.hash_rate_hs || 0));
+  const peakCombined = historyRates.length ? Math.max(...historyRates) : combinedRate;
+  const averageCombined = miners.reduce(
+    (sum, miner) => sum + Number(miner.average_hash_rate_hs || 0),
+    0,
+  );
+
+  ui.averageRate.textContent = formatRate(averageCombined);
+  ui.peakRate.textContent = formatRate(peakCombined);
+  ui.totalHashes.textContent = formatCompact(totalHashCount);
+  ui.jobsStarted.textContent = jobs.toLocaleString();
+  ui.staleJobs.textContent = stale.toLocaleString();
+  ui.staleRate.textContent = jobs ? ((stale / jobs) * 100).toFixed(1) + "%" : "0.0%";
+  ui.chartPeak.textContent = formatRate(peakCombined);
+  ui.chartTotalHashes.textContent = formatCompact(totalHashCount);
+
+  renderCharts(combinedHistory);
+
+  ui.error.textContent =
+    reachable === 0
+      ? "Neither Northflank miner is reachable."
+      : "";
+
+  for (let slot = 0; slot < 2; slot += 1) {
+    const miner = minerStats[slot];
+    const marker = miner?.last_accepted_at
+      ? `${miner.last_accepted_height}:${miner.last_accepted_at}`
+      : null;
+
+    if (!initializedAcceptedMarkers) {
+      lastAcceptedMarker[slot] = marker;
+      continue;
+    }
+
+    if (marker && marker !== lastAcceptedMarker[slot]) {
       ui.acceptedCopy.textContent =
-        "Block " + Number(acceptedHeight).toLocaleString() + " accepted";
+        `Miner ${slot + 1} accepted block ${Number(miner.last_accepted_height).toLocaleString()}`;
       ui.acceptedBanner.classList.add("show");
       window.setTimeout(() => ui.acceptedBanner.classList.remove("show"), 6000);
+      lastAcceptedMarker[slot] = marker;
     }
-    lastAcceptedHeight = acceptedHeight;
   }
+  initializedAcceptedMarkers = true;
+}
+
+async function fetchMiner(slot) {
+  const response = await fetch(`/api/miner?slot=${slot}`, { cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `Miner ${slot} unavailable.`);
+  return body;
 }
 
 async function load() {
-  try {
-    const response = await fetch("/api/miner", { cache: "no-store" });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Miner backend unavailable.");
-    render(body);
-    ui.refresh.textContent = "Live";
-  } catch (error) {
-    ui.pill.classList.remove("online");
-    ui.status.textContent = "Disconnected";
-    ui.error.textContent = error instanceof Error ? error.message : String(error);
-    ui.refresh.textContent = "Reconnecting";
-    ui.toggle.disabled = true;
-  }
+  const results = await Promise.allSettled([fetchMiner(1), fetchMiner(2)]);
+
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      minerStats[index] = result.value;
+      minerErrors[index] = "";
+    } else {
+      minerStats[index] = null;
+      minerErrors[index] =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+    }
+    renderSlot(index);
+  });
+
+  renderAggregate();
+  ui.refresh.textContent = minerStats.some(Boolean) ? "Live" : "Reconnecting";
 }
 
-async function control(action) {
-  if (busy) return;
-  busy = true;
-  ui.toggle.disabled = true;
-  ui.error.textContent = "";
+async function control(slot, action) {
+  const index = slot - 1;
+  if (busy[index]) return;
+
+  busy[index] = true;
+  renderSlot(index);
 
   try {
-    const response = await fetch("/api/miner?action=" + encodeURIComponent(action), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Control request failed.");
-    if (body.stats) render(body.stats);
+    const response = await fetch(
+      `/api/miner?slot=${slot}&action=${encodeURIComponent(action)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Miner ${slot} control failed.`);
+    if (body.stats) {
+      minerStats[index] = body.stats;
+      minerErrors[index] = "";
+    }
   } catch (error) {
-    ui.error.textContent = error instanceof Error ? error.message : String(error);
+    minerErrors[index] = error instanceof Error ? error.message : String(error);
   } finally {
-    busy = false;
+    busy[index] = false;
     await load();
   }
 }
 
-ui.toggle.addEventListener("click", () => {
-  const action = stats?.mining_requested ? "stop" : "start";
-  void control(action);
+ui.slots.forEach((elements, index) => {
+  const slot = index + 1;
+  elements.toggle.addEventListener("click", () => {
+    const action = minerStats[index]?.mining_requested ? "stop" : "start";
+    void control(slot, action);
+  });
 });
 
 let resizeTimer = null;
