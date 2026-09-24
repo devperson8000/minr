@@ -34,7 +34,7 @@ TEMPLATE_MIN_INTERVAL_SECONDS = max(
 HTTP_TIMEOUT_SECONDS = max(3.0, float(os.getenv("KNX_HTTP_TIMEOUT_SECONDS", "15")))
 LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv("KNX_LOG_INTERVAL_SECONDS", "2")))
 CONTROL_TOKEN = os.getenv("MINER_CONTROL_TOKEN", "").strip()
-AUTOSTART = os.getenv("MINER_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}
+AUTOSTART = os.getenv("MINER_AUTOSTART", "0").strip().lower() not in {"0", "false", "no", "off"}
 CHECK_EVERY_HASHES = 16384
 USER_AGENT = "minr/2.0"
 
