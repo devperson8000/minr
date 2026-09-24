@@ -27,9 +27,75 @@
       <p class="sub">Dedicated Northflank compute with live performance, rewards and mining history.</p>
     </section>
 
+    <section class="miner-control-grid">
+      <article class="miner-slot-card" id="miner-1-card">
+        <div class="miner-slot-head">
+          <div>
+            <p class="eyebrow small">CLOUD SLOT 1</p>
+            <h2>Miner 1</h2>
+          </div>
+          <div id="miner-1-status-pill" class="slot-pill offline">
+            <span class="dot"></span>
+            <span id="miner-1-status">Connecting</span>
+          </div>
+        </div>
+        <div class="slot-stats">
+          <div>
+            <span class="label">HASH RATE</span>
+            <strong id="miner-1-rate">—</strong>
+          </div>
+          <div>
+            <span class="label">HEIGHT</span>
+            <strong id="miner-1-height">—</strong>
+          </div>
+          <div>
+            <span class="label">STATE</span>
+            <strong id="miner-1-phase">—</strong>
+          </div>
+        </div>
+        <button id="miner-1-toggle" class="control slot-control" type="button" disabled>
+          <span id="miner-1-button-icon">▶</span>
+          <span id="miner-1-button-label">Start Miner 1</span>
+        </button>
+        <p id="miner-1-error" class="slot-error"></p>
+      </article>
+
+      <article class="miner-slot-card" id="miner-2-card">
+        <div class="miner-slot-head">
+          <div>
+            <p class="eyebrow small">CLOUD SLOT 2</p>
+            <h2>Miner 2</h2>
+          </div>
+          <div id="miner-2-status-pill" class="slot-pill offline">
+            <span class="dot"></span>
+            <span id="miner-2-status">Connecting</span>
+          </div>
+        </div>
+        <div class="slot-stats">
+          <div>
+            <span class="label">HASH RATE</span>
+            <strong id="miner-2-rate">—</strong>
+          </div>
+          <div>
+            <span class="label">HEIGHT</span>
+            <strong id="miner-2-height">—</strong>
+          </div>
+          <div>
+            <span class="label">STATE</span>
+            <strong id="miner-2-phase">—</strong>
+          </div>
+        </div>
+        <button id="miner-2-toggle" class="control slot-control" type="button" disabled>
+          <span id="miner-2-button-icon">▶</span>
+          <span id="miner-2-button-label">Start Miner 2</span>
+        </button>
+        <p id="miner-2-error" class="slot-error"></p>
+      </article>
+    </section>
+
     <section class="panel overview-panel">
       <div class="primary-stat">
-        <span class="label">HASH RATE</span>
+        <span class="label">COMBINED HASH RATE</span>
         <strong id="hash-rate">—</strong>
       </div>
 
@@ -46,23 +112,18 @@
           <strong id="accepted">0</strong>
         </div>
         <div>
-          <span class="label">UPTIME</span>
-          <strong id="uptime">—</strong>
+          <span class="label">ACTIVE MINERS</span>
+          <strong id="active-miners">0 / 2</strong>
         </div>
         <div>
-          <span class="label">WORKERS</span>
+          <span class="label">TOTAL WORKERS</span>
           <strong id="workers">—</strong>
         </div>
         <div>
-          <span class="label">PHASE</span>
+          <span class="label">STATUS</span>
           <strong id="phase">—</strong>
         </div>
       </div>
-
-      <button id="toggle" class="control" type="button" disabled>
-        <span id="button-icon">▶</span>
-        <span id="button-label">Start mining</span>
-      </button>
 
       <div id="accepted-banner" class="accepted-banner" aria-live="polite">
         <span class="accepted-icon">✓</span>
