@@ -34,7 +34,9 @@ TEMPLATE_MIN_INTERVAL_SECONDS = max(
 HTTP_TIMEOUT_SECONDS = max(3.0, float(os.getenv("KNX_HTTP_TIMEOUT_SECONDS", "15")))
 LOG_INTERVAL_SECONDS = max(1.0, float(os.getenv("KNX_LOG_INTERVAL_SECONDS", "2")))
 CONTROL_TOKEN = os.getenv("MINER_CONTROL_TOKEN", "").strip()
-AUTOSTART = os.getenv("MINER_AUTOSTART", "0").strip().lower() not in {"0", "false", "no", "off"}
+# Dedicated MINR is intentionally manual-control only. Nothing at process
+# startup, browser refresh, or stats polling can enable hashing. The sole
+# start path is the authenticated POST /control/start endpoint.
 CHECK_EVERY_HASHES = 16384
 USER_AGENT = "minr/2.0"
 
@@ -511,13 +513,22 @@ class MinerEngine:
         self.thread.start()
 
     def request_start(self) -> None:
-        STATE.set(mining_requested=True, last_error=None)
+        # This is the only method that enables mining and it is only called
+        # from the authenticated control endpoint.
+        STATE.set(mining_requested=True, last_error=None, phase="starting")
         self.enabled.set()
 
     def request_stop(self) -> None:
-        STATE.set(mining_requested=False, phase="paused", hash_rate_hs=0.0)
+        # Latch the service off first, then invalidate any in-flight job.
+        # Once cleared, the engine cannot re-enable itself.
         self.enabled.clear()
         self._invalidate_job()
+        STATE.set(
+            mining_requested=False,
+            phase="paused",
+            hash_rate_hs=0.0,
+            current_job_attempts=0,
+        )
 
     def _setup_workers(self) -> None:
         if self.processes and all(process.is_alive() for process in self.processes):
@@ -681,9 +692,21 @@ class MinerEngine:
                 STATE.set(phase="fetching_template")
                 self.last_template_fetch = time.monotonic()
                 template = self.client.template()
+
+                # A Stop command may arrive while the network request is in
+                # flight. Do not dispatch that freshly returned template if
+                # the user paused the miner meanwhile.
+                if not self.enabled.is_set() or SERVICE_STOP.is_set():
+                    STATE.set(
+                        mining_requested=False,
+                        phase="paused",
+                        hash_rate_hs=0.0,
+                        current_job_attempts=0,
+                    )
+                    continue
+
                 self.lease_held = True
                 delay = 2.0
-
                 template = dict(template)
                 template["expires_unix"] = parse_expiry(template)
                 height = int(template["height"])
@@ -704,6 +727,15 @@ class MinerEngine:
                     f"knxcoin/coinbase/v2|{height}|"
                     f"{template['miner_address']}|{reward}|"
                 ).encode("ascii")
+
+                if not self.enabled.is_set() or SERVICE_STOP.is_set():
+                    STATE.set(
+                        mining_requested=False,
+                        phase="paused",
+                        hash_rate_hs=0.0,
+                        current_job_attempts=0,
+                    )
+                    continue
 
                 self.job_seq += 1
                 job_id = self.job_seq
@@ -902,8 +934,14 @@ def main() -> int:
     server_thread.start()
 
     ENGINE.start_service()
-    if AUTOSTART:
-        ENGINE.request_start()
+    # Always boot paused. A Northflank restart or a new deployment must never
+    # silently resume mining after the user previously stopped it.
+    STATE.set(
+        mining_requested=False,
+        phase="paused",
+        hash_rate_hs=0.0,
+        current_job_attempts=0,
+    )
 
     try:
         while not SERVICE_STOP.wait(0.5):
