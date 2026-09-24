@@ -530,6 +530,15 @@ class MinerEngine:
             current_job_attempts=0,
         )
 
+        # Release the wallet's two-slot lease immediately. Do this even if the
+        # local lease flag is false because a template request may have acquired
+        # the remote lease just before the user pressed Stop.
+        threading.Thread(
+            target=self._force_release_lease,
+            name="miner-lease-release",
+            daemon=True,
+        ).start()
+
     def _setup_workers(self) -> None:
         if self.processes and all(process.is_alive() for process in self.processes):
             return
@@ -656,10 +665,15 @@ class MinerEngine:
         except NodeError:
             pass
 
+    def _force_release_lease(self) -> None:
+        try:
+            self.client.release()
+        finally:
+            self.lease_held = False
+
     def _release_lease(self) -> None:
         if self.lease_held:
-            self.client.release()
-            self.lease_held = False
+            self._force_release_lease()
 
     def _run(self) -> None:
         delay = 2.0
@@ -697,6 +711,10 @@ class MinerEngine:
                 # flight. Do not dispatch that freshly returned template if
                 # the user paused the miner meanwhile.
                 if not self.enabled.is_set() or SERVICE_STOP.is_set():
+                    # The template endpoint acquires/renews the session lease
+                    # before returning. If Stop happened while this request was
+                    # in flight, explicitly release that just-created lease.
+                    self._force_release_lease()
                     STATE.set(
                         mining_requested=False,
                         phase="paused",
