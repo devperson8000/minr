@@ -49,6 +49,7 @@ const ui = {
     toggle: document.getElementById(`miner-${slot}-toggle`),
     buttonIcon: document.getElementById(`miner-${slot}-button-icon`),
     buttonLabel: document.getElementById(`miner-${slot}-button-label`),
+    hint: document.getElementById(`miner-${slot}-hint`),
     error: document.getElementById(`miner-${slot}-error`),
   })),
 };
@@ -423,6 +424,7 @@ function renderSlot(slotIndex) {
     elements.height.textContent = "—";
     elements.phase.textContent = "Offline";
     elements.toggle.disabled = true;
+    elements.hint.textContent = minerErrors[slotIndex] ? "Miner service unavailable." : "Waiting for miner status…";
     elements.error.textContent = minerErrors[slotIndex];
     return;
   }
@@ -442,6 +444,9 @@ function renderSlot(slotIndex) {
   elements.toggle.classList.toggle("stop", requested);
   elements.buttonIcon.textContent = requested ? "Ⅱ" : "▶";
   elements.buttonLabel.textContent = requested ? `Stop Miner ${slot}` : `Start Miner ${slot}`;
+  elements.hint.textContent = requested
+    ? "Runs in Northflank even if this tab is closed."
+    : "Paused until you explicitly resume it.";
 
   const phase = String(next.phase || "");
   elements.error.textContent =
