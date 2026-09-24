@@ -20,7 +20,6 @@ KNX_API_KEY=your_knx_key
 KNX_MINER_SESSION_ID=a_unique_uuid
 KNX_WORKERS=1
 MINER_CONTROL_TOKEN=a_long_random_secret
-MINER_AUTOSTART=0
 PORT=8080
 \`\`\`
 
@@ -43,7 +42,7 @@ GET /health
 port 8080
 \`\`\`
 
-With `MINER_AUTOSTART=0`, the miner stays paused after a deployment until the Vercel dashboard starts it. Its normal console output is intentionally short:
+Dedicated MINR is manual-control only. Every process/container boot starts paused, and the only way to enable hashing is the authenticated Start button from the Vercel dashboard. Closing or refreshing the browser never changes the current state. Once stopped, a miner stays paused until you explicitly start it again. Its normal console output is intentionally short:
 
 \`\`\`text
 82.4 kH/s | height 1432
