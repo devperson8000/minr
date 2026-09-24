@@ -513,6 +513,7 @@ footer {
 }
 
 @media (max-width: 900px) {
+  .miner-control-grid,
   .insight-grid,
   .chart-grid { grid-template-columns: 1fr; }
 }
@@ -524,6 +525,7 @@ footer {
   .primary-stat, .height-stat { width: 100%; }
   .height-stat { margin-top: 22px; }
   .mini-grid { grid-template-columns: repeat(2, 1fr); }
+  .slot-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hero-value-row { grid-template-columns: 1fr; }
   .value-side { padding: 16px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .detail-grid { grid-template-columns: repeat(2, 1fr); }
@@ -549,4 +551,109 @@ footer {
     animation: none !important;
     transition: none !important;
   }
+}
+
+
+.miner-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.miner-slot-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter: blur(22px);
+}
+
+.miner-slot-card::after {
+  position: absolute;
+  top: 0;
+  right: 16%;
+  left: 16%;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(137,255,186,.25), transparent);
+}
+
+.miner-slot-card.running {
+  border-color: var(--line-strong);
+  box-shadow: 0 20px 60px rgba(0,0,0,.2), 0 0 26px rgba(137,255,186,.04), inset 0 1px rgba(255,255,255,.04);
+}
+
+.miner-slot-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slot-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255,255,255,.025);
+  font-size: .62rem;
+  font-weight: 750;
+}
+
+.slot-pill.online {
+  border-color: var(--line-strong);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.slot-pill.online .dot {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(137,255,186,.45);
+}
+
+.slot-stats {
+  display: grid;
+  grid-template-columns: 1.25fr .75fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.slot-stats > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 11px;
+  background: rgba(255,255,255,.02);
+}
+
+.slot-stats strong {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #dbe6df;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 670;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-control {
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+.slot-error {
+  min-height: 14px;
+  margin: 9px 0 0;
+  color: var(--danger);
+  font-size: .62rem;
+  line-height: 1.4;
 }
