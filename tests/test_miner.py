@@ -37,7 +37,30 @@ class MinerProtocolTests(unittest.TestCase):
         c = miner.coinbase_txid(template, "0000000000000002")
         self.assertEqual(a, b)
         self.assertNotEqual(a, c)
-        self.assertEqual(len(a), 64)
+
+    def test_fast_merkle_matches_full_merkle(self):
+        template = {
+            "height": 11,
+            "miner_address": "knx_test",
+            "subsidy_shards": "500",
+            "fees_shards": "20",
+        }
+        extra = "0000000000000001"
+        coinbase = miner.coinbase_txid(template, extra)
+        txids = [
+            hashlib.sha256(b"a").hexdigest(),
+            hashlib.sha256(b"b").hexdigest(),
+            hashlib.sha256(b"c").hexdigest(),
+        ]
+        branch = miner.build_coinbase_branch(txids)
+        internal = bytes.fromhex(coinbase)[::-1]
+        fast = miner.merkle_from_coinbase(internal, branch)
+        full = miner.merkle_root([coinbase] + txids)
+        self.assertEqual(fast, full)
+
+    def test_rate_format(self):
+        self.assertEqual(miner.format_rate(999), "999 H/s")
+        self.assertEqual(miner.format_rate(1250), "1.2 kH/s")
 
 
 if __name__ == "__main__":

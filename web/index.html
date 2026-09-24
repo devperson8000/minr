@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#080a09" />
+  <meta name="description" content="MINR — minimal KNXCoin cloud miner dashboard" />
+  <title>MINR</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="shell">
+    <nav>
+      <a class="brand" href="/" aria-label="MINR home">
+        <span class="mark">M</span>
+        <span>MINR</span>
+      </a>
+      <div id="status-pill" class="pill offline">
+        <span class="dot"></span>
+        <span id="status-text">Connecting</span>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <p class="eyebrow">KNXCOIN CLOUD MINER</p>
+      <h1>Quiet interface.<br />Full-speed hashing.</h1>
+      <p class="sub">Dedicated Northflank compute, controlled from a lightweight Vercel dashboard.</p>
+    </section>
+
+    <section class="panel">
+      <div class="primary-stat">
+        <span class="label">HASH RATE</span>
+        <strong id="hash-rate">—</strong>
+      </div>
+
+      <div class="height-stat">
+        <span class="label">BLOCK HEIGHT</span>
+        <strong id="height">—</strong>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="mini-grid">
+        <div>
+          <span class="label">ACCEPTED</span>
+          <strong id="accepted">0</strong>
+        </div>
+        <div>
+          <span class="label">UPTIME</span>
+          <strong id="uptime">—</strong>
+        </div>
+        <div>
+          <span class="label">WORKERS</span>
+          <strong id="workers">—</strong>
+        </div>
+        <div>
+          <span class="label">PHASE</span>
+          <strong id="phase">—</strong>
+        </div>
+      </div>
+
+      <button id="toggle" class="control" type="button" disabled>
+        <span id="button-icon">▶</span>
+        <span id="button-label">Start mining</span>
+      </button>
+
+      <div id="accepted-banner" class="accepted-banner" aria-live="polite">
+        <span class="accepted-icon">✓</span>
+        <span id="accepted-copy">Block accepted</span>
+      </div>
+
+      <p id="error" class="error" role="status"></p>
+    </section>
+
+    <footer>
+      <span>Northflank compute</span>
+      <span class="sep">•</span>
+      <span>Vercel interface</span>
+      <span class="sep">•</span>
+      <span id="refresh-state">Live</span>
+    </footer>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
