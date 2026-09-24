@@ -24,10 +24,10 @@
     <section class="hero">
       <p class="eyebrow">KNXCOIN CLOUD MINER</p>
       <h1>Quiet interface.<br />Full-speed hashing.</h1>
-      <p class="sub">Dedicated Northflank compute, controlled from a lightweight Vercel dashboard.</p>
+      <p class="sub">Dedicated Northflank compute with live performance, rewards and mining history.</p>
     </section>
 
-    <section class="panel">
+    <section class="panel overview-panel">
       <div class="primary-stat">
         <span class="label">HASH RATE</span>
         <strong id="hash-rate">—</strong>
@@ -42,7 +42,7 @@
 
       <div class="mini-grid">
         <div>
-          <span class="label">ACCEPTED</span>
+          <span class="label">SESSION BLOCKS</span>
           <strong id="accepted">0</strong>
         </div>
         <div>
@@ -70,6 +70,145 @@
       </div>
 
       <p id="error" class="error" role="status"></p>
+    </section>
+
+    <section class="insight-grid">
+      <article class="data-card earnings-card">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow small">REWARDS</p>
+            <h2>What you've mined</h2>
+          </div>
+          <span class="card-chip">KNX</span>
+        </div>
+
+        <div class="hero-value-row">
+          <div>
+            <span class="label">ALL-TIME MINED</span>
+            <strong id="wallet-earned-knx" class="hero-value">—</strong>
+            <span class="unit">KNX</span>
+          </div>
+          <div class="value-side">
+            <span class="label">CURRENT SIMULATED VALUE</span>
+            <strong id="wallet-value-aud">—</strong>
+            <small>At the current KNX market price · not cash</small>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          <div>
+            <span class="label">THIS SESSION</span>
+            <strong id="session-earned-knx">—</strong>
+            <small>KNX mined since this service started</small>
+          </div>
+          <div>
+            <span class="label">SESSION VALUE</span>
+            <strong id="session-value-aud">—</strong>
+            <small>Current simulated value · not cash</small>
+          </div>
+          <div>
+            <span class="label">WALLET BLOCKS</span>
+            <strong id="wallet-blocks">—</strong>
+            <small>All-time accepted blocks</small>
+          </div>
+          <div>
+            <span class="label">CURRENT REWARD</span>
+            <strong id="current-reward">—</strong>
+            <small>KNX if this block is won</small>
+          </div>
+          <div>
+            <span class="label">MARKET PRICE</span>
+            <strong id="market-price">—</strong>
+            <small>Simulated A$ per KNX</small>
+          </div>
+          <div>
+            <span class="label">LAST WIN</span>
+            <strong id="last-win">—</strong>
+            <small id="last-win-detail">No accepted block this session</small>
+          </div>
+        </div>
+      </article>
+
+      <article class="data-card performance-card">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow small">PERFORMANCE</p>
+            <h2>How the miner is going</h2>
+          </div>
+          <span class="card-chip">LIVE</span>
+        </div>
+
+        <div class="performance-grid">
+          <div>
+            <span class="label">AVERAGE RATE</span>
+            <strong id="average-rate">—</strong>
+          </div>
+          <div>
+            <span class="label">PEAK RATE</span>
+            <strong id="peak-rate">—</strong>
+          </div>
+          <div>
+            <span class="label">TOTAL HASHES</span>
+            <strong id="total-hashes">—</strong>
+          </div>
+          <div>
+            <span class="label">JOBS</span>
+            <strong id="jobs-started">—</strong>
+          </div>
+          <div>
+            <span class="label">STALE JOBS</span>
+            <strong id="stale-jobs">—</strong>
+          </div>
+          <div>
+            <span class="label">STALE RATE</span>
+            <strong id="stale-rate">—</strong>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="chart-grid">
+      <article class="chart-card">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow small">HASH RATE</p>
+            <h2>Recent performance</h2>
+          </div>
+          <div class="chart-kpi">
+            <span class="label">PEAK</span>
+            <strong id="chart-peak">—</strong>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="hash-chart" aria-label="Recent hash rate chart"></canvas>
+          <div id="hash-chart-empty" class="chart-empty">Collecting hash-rate samples…</div>
+        </div>
+        <div class="chart-foot">
+          <span id="hash-window">Recent samples</span>
+          <span id="hash-samples">0 samples</span>
+        </div>
+      </article>
+
+      <article class="chart-card">
+        <div class="chart-head">
+          <div>
+            <p class="eyebrow small">WORK DONE</p>
+            <h2>Cumulative hashing</h2>
+          </div>
+          <div class="chart-kpi">
+            <span class="label">TOTAL</span>
+            <strong id="chart-total-hashes">—</strong>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="work-chart" aria-label="Cumulative hashes chart"></canvas>
+          <div id="work-chart-empty" class="chart-empty">Mining history will appear here.</div>
+        </div>
+        <div class="chart-foot">
+          <span>Hashes attempted by this MINR service</span>
+          <span id="height-range">—</span>
+        </div>
+      </article>
     </section>
 
     <footer>
