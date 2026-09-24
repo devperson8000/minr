@@ -20,7 +20,7 @@ KNX_API_KEY=your_knx_key
 KNX_MINER_SESSION_ID=a_unique_uuid
 KNX_WORKERS=1
 MINER_CONTROL_TOKEN=a_long_random_secret
-MINER_AUTOSTART=1
+MINER_AUTOSTART=0
 PORT=8080
 \`\`\`
 
@@ -43,7 +43,7 @@ GET /health
 port 8080
 \`\`\`
 
-The miner starts automatically. Its normal console output is intentionally short:
+With `MINER_AUTOSTART=0`, the miner stays paused after a deployment until the Vercel dashboard starts it. Its normal console output is intentionally short:
 
 \`\`\`text
 82.4 kH/s | height 1432
