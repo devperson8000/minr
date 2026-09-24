@@ -191,7 +191,9 @@ class RuntimeState:
         with self._lock:
             self.total_attempts += max(0, attempts)
             self.current_job_attempts = attempts
-            self.hash_rate_hs = 0.0
+            # Keep the most recent measured rate visible while the miner swaps
+            # a 12-second template for the next one. Only a real pause/backoff
+            # resets it, so dashboards do not flicker to 0 H/s every handoff.
             if stale:
                 self.stale_jobs += 1
 
@@ -674,6 +676,8 @@ class MinerEngine:
                 if not self._template_gate():
                     continue
 
+                # Fetching the next short-lived template is part of normal
+                # mining. Preserve the last measured rate through this handoff.
                 STATE.set(phase="fetching_template")
                 self.last_template_fetch = time.monotonic()
                 template = self.client.template()
@@ -714,7 +718,6 @@ class MinerEngine:
                 STATE.set(
                     phase="mining",
                     height=height,
-                    hash_rate_hs=0.0,
                     current_job_attempts=0,
                     jobs_started=current_jobs,
                 )
@@ -780,6 +783,9 @@ class MinerEngine:
                 if not self.enabled.is_set() or SERVICE_STOP.is_set():
                     continue
                 if solution is None:
+                    # The protocol intentionally uses 12-second templates.
+                    # Transition straight to the next job without zeroing the
+                    # last good rate shown to monitoring clients.
                     STATE.set(phase="refreshing")
                     continue
 
