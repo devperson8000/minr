@@ -166,6 +166,15 @@ class RuntimeState:
     jobs_started: int = 0
     stale_jobs: int = 0
     accepted_blocks: int = 0
+    session_earned_shards: int = 0
+    wallet_blocks_mined: int = 0
+    wallet_earned_shards: str = "0"
+    current_reward_shards: str = "0"
+    market_price_cents: float = 0.0
+    peak_hash_rate_hs: float = 0.0
+    hash_rate_sum: float = 0.0
+    hash_rate_samples: int = 0
+    hash_history: list[dict[str, Any]] = field(default_factory=list)
     last_accepted_height: int | None = None
     last_accepted_hash: str | None = None
     last_accepted_at: str | None = None
@@ -186,9 +195,40 @@ class RuntimeState:
             if stale:
                 self.stale_jobs += 1
 
-    def accepted(self, height: int, block_hash: str | None) -> None:
+    def record_rate(self, rate: float, height: int | None) -> None:
+        if not (rate >= 0):
+            return
+        with self._lock:
+            self.peak_hash_rate_hs = max(self.peak_hash_rate_hs, rate)
+            self.hash_rate_sum += rate
+            self.hash_rate_samples += 1
+            total_hashes = self.total_attempts + self.current_job_attempts
+            self.hash_history.append(
+                {
+                    "time": int(time.time()),
+                    "hash_rate_hs": round(rate, 2),
+                    "height": height,
+                    "total_hashes": total_hashes,
+                }
+            )
+            if len(self.hash_history) > 240:
+                del self.hash_history[:-240]
+
+    def update_wallet_status(self, status: dict[str, Any]) -> None:
+        with self._lock:
+            self.wallet_blocks_mined = int(status.get("blocks_mined") or 0)
+            shards = str(status.get("shards_earned") or "0")
+            self.wallet_earned_shards = shards if shards.isdigit() else "0"
+
+    def update_market(self, summary: dict[str, Any]) -> None:
+        price = float(summary.get("price_cents") or 0)
+        with self._lock:
+            self.market_price_cents = price if price > 0 else 0.0
+
+    def accepted(self, height: int, block_hash: str | None, reward_shards: int) -> None:
         with self._lock:
             self.accepted_blocks += 1
+            self.session_earned_shards += max(0, reward_shards)
             self.last_accepted_height = height
             self.last_accepted_hash = block_hash
             self.last_accepted_at = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -196,6 +236,28 @@ class RuntimeState:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            average_rate = (
+                self.hash_rate_sum / self.hash_rate_samples
+                if self.hash_rate_samples
+                else 0.0
+            )
+            jobs = max(0, self.jobs_started)
+            stale_rate = (self.stale_jobs / jobs * 100.0) if jobs else 0.0
+            price_scale = 10_000
+            shards_per_knx = 100_000_000
+            scaled_price = int(round(self.market_price_cents * price_scale))
+            wallet_value_cents = (
+                int(self.wallet_earned_shards) * scaled_price
+                // (shards_per_knx * price_scale)
+                if scaled_price > 0
+                else 0
+            )
+            session_value_cents = (
+                self.session_earned_shards * scaled_price
+                // (shards_per_knx * price_scale)
+                if scaled_price > 0
+                else 0
+            )
             return {
                 "status": "stopping" if SERVICE_STOP.is_set() else "ok",
                 "phase": self.phase,
@@ -208,6 +270,17 @@ class RuntimeState:
                 "jobs_started": self.jobs_started,
                 "stale_jobs": self.stale_jobs,
                 "accepted_blocks": self.accepted_blocks,
+                "session_earned_shards": str(self.session_earned_shards),
+                "session_value_cents": str(session_value_cents),
+                "wallet_blocks_mined": self.wallet_blocks_mined,
+                "wallet_earned_shards": self.wallet_earned_shards,
+                "wallet_value_cents": str(wallet_value_cents),
+                "current_reward_shards": self.current_reward_shards,
+                "market_price_cents": round(self.market_price_cents, 6),
+                "peak_hash_rate_hs": round(self.peak_hash_rate_hs, 2),
+                "average_hash_rate_hs": round(average_rate, 2),
+                "stale_rate_percent": round(stale_rate, 2),
+                "hash_history": list(self.hash_history),
                 "last_accepted_height": self.last_accepted_height,
                 "last_accepted_hash": self.last_accepted_hash,
                 "last_accepted_at": self.last_accepted_at,
@@ -301,6 +374,14 @@ class NodeClient:
         query = urllib.parse.urlencode({"address": address})
         return self._request(
             f"/api/mining/status?{query}",
+            None,
+            method="GET",
+            auth=False,
+        )
+
+    def market(self) -> dict[str, Any]:
+        return self._request(
+            "/api/market/summary",
             None,
             method="GET",
             auth=False,
@@ -418,6 +499,7 @@ class MinerEngine:
         self.processes: list[Any] = []
         self.job_seq = 0
         self.last_template_fetch = 0.0
+        self.last_market_fetch = 0.0
         self.lease_held = False
 
     def start_service(self) -> None:
@@ -552,6 +634,15 @@ class MinerEngine:
             except NodeError:
                 pass
 
+    def _refresh_market_if_due(self) -> None:
+        if time.monotonic() - self.last_market_fetch < 60.0:
+            return
+        try:
+            STATE.update_market(self.client.market())
+            self.last_market_fetch = time.monotonic()
+        except NodeError:
+            pass
+
     def _release_lease(self) -> None:
         if self.lease_held:
             self.client.release()
@@ -597,6 +688,14 @@ class MinerEngine:
                 ]
                 branch = build_coinbase_branch(transaction_ids)
                 reward = int(template["subsidy_shards"]) + int(template["fees_shards"])
+                STATE.set(current_reward_shards=str(reward))
+                try:
+                    STATE.update_wallet_status(
+                        self.client.status(str(template["miner_address"]))
+                    )
+                except NodeError:
+                    pass
+                self._refresh_market_if_due()
                 coinbase_prefix = (
                     f"knxcoin/coinbase/v2|{height}|"
                     f"{template['miner_address']}|{reward}|"
@@ -662,6 +761,7 @@ class MinerEngine:
 
                     now = time.monotonic()
                     if now - last_log >= LOG_INTERVAL_SECONDS:
+                        STATE.record_rate(rate, height)
                         print(f"{format_rate(rate)} | height {height}", flush=True)
                         last_log = now
 
@@ -691,7 +791,7 @@ class MinerEngine:
                     block_hash = str(
                         result.get("hash", payload.get("header_hash", ""))
                     ) or None
-                    STATE.accepted(accepted_height, block_hash)
+                    STATE.accepted(accepted_height, block_hash, reward)
                     print(f"ACCEPTED | height {accepted_height}", flush=True)
 
             except NodeError as error:
